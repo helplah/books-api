@@ -2,11 +2,13 @@ const uuid = require("uuid/v4");
 const express = require("express");
 const router = express.Router();
 const { books } = require("../data/db.json");
+const { Book, Author } = require("../models");
 
 const filterBooksBy = (property, value) => {
   return books.filter(b => b[property] === value);
 };
 
+// remember to put my-awesome-token in postman bearer token
 const verifyToken = (req, res, next) => {
   const { authorization } = req.headers;
   if (!authorization) {
@@ -22,37 +24,94 @@ const verifyToken = (req, res, next) => {
 
 router
   .route("/")
-  .get((req, res) => {
+  .get(async (req, res) => {
     const { author, title } = req.query;
 
     if (title) {
-      res.json(filterBooksBy("title", title));
+      // Use where to filter
+      const books = await Book.findAll({
+        where: { title },
+        include: [Author]
+      }).catch(err => err);
+      res.json(books);
     } else if (author) {
-      res.json(filterBooksBy("author", author));
+      // Author table doesn't have author name, thus need to use include to specify the model
+      const books = await Book.findAll({
+        include: [{ model: Author, where: { name: author } }]
+      }).catch(err => err);
+      res.json(books);
     } else {
+      const books = await Book.findAll({
+        include: [Author]
+      });
       res.json(books);
     }
   })
-  .post(verifyToken, (req, res) => {
-    const book = req.body;
-    book.id = uuid();
-    res.status(201).json(req.body);
+  .post(verifyToken, async (req, res) => {
+    const { title, name } = req.body;
+
+    await sequelize.transaction(async t => {
+      try {
+        //find if author exist if not create
+        const [foundAuthor] = await Author.findOrCreate({
+          where: { name },
+          transaction: t
+        });
+
+        //create a book w/o author
+        const newBook = await Book.create({ title, transaction: t });
+        throw new Error("Error out");
+        await newBook.setAuthor(foundAuthor, { transaction: t });
+
+        //query again
+        const newBookWithAuthor = await Book.findOne({
+          where: { id: newBook.id },
+          include: [Author]
+        });
+        res.status(201).json(newBookWithAuthor);
+      } catch (err) {
+        res.status(400).json({
+          err: `Author with name = [${req.body.author}] doesn\'t exist.`
+        });
+      }
+
+      // author refer to the model Author
+      // const book = await Book.create(
+      //   { title, Author: { name: name } },
+      //   { include: [Author] }
+      // );
+      res.status(201).json(book);
+    });
   });
 
 router
   .route("/:id")
-  .put((req, res) => {
-    const book = books.find(b => b.id === req.params.id);
+  .put(async (req, res) => {
+    const book = await Book.findOne({
+      where: { id: req.params.id },
+      include: [Author]
+    });
+
     if (book) {
-      res.status(202).json(req.body);
+      const updated = await Book.update({ title: req.body.title });
+      res.status(202).json(updated);
     } else {
       res.sendStatus(400);
     }
   })
-  .delete((req, res) => {
-    const book = books.find(b => b.id === req.params.id);
-    if (book) {
-      res.sendStatus(202);
+  .delete(async (req, res) => {
+    const book = await Book.findOne({
+      where: { id: req.params.id }
+    });
+
+    const destroy = await Book.destroy({
+      where: {
+        id: req.params.id
+      }
+    });
+
+    if (destroy === 1) {
+      res.status(202).json(book);
     } else {
       res.sendStatus(400);
     }
