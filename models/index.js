@@ -1,14 +1,18 @@
 require("dotenv").config();
 const Sequelize = require("sequelize");
 
-const sequelize = new Sequelize(
-  "books-api",
-  "postgres",
-  process.env.DB_PASSWORD,
-  {
+let sequelize;
+const currentEnv = process.env.NODE_ENV || "development";
+
+if (currentEnv === "production") {
+  sequelize = new Sequelize(process.env.DB_URL, {
     dialect: "postgres"
-  }
-);
+  });
+} else {
+  sequelize = new Sequelize("books-api", "postgres", process.env.DB_PASSWORD, {
+    dialect: "postgres"
+  });
+}
 
 const models = {
   Book: sequelize.import("./book"),

@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const { books } = require("../data/db.json");
 const { Book, Author } = require("../models");
+const { sequelize } = require("../models/index");
 
 const filterBooksBy = (property, value) => {
   return books.filter(b => b[property] === value);
@@ -25,7 +26,7 @@ const verifyToken = (req, res, next) => {
 router
   .route("/")
   .get(async (req, res) => {
-    const { author, title } = req.query;
+    const { title, name } = req.query;
 
     if (title) {
       // Use where to filter
@@ -34,10 +35,10 @@ router
         include: [Author]
       }).catch(err => err);
       res.json(books);
-    } else if (author) {
+    } else if (name) {
       // Author table doesn't have author name, thus need to use include to specify the model
       const books = await Book.findAll({
-        include: [{ model: Author, where: { name: author } }]
+        include: [{ model: Author, where: { name } }]
       }).catch(err => err);
       res.json(books);
     } else {
@@ -60,27 +61,20 @@ router
 
         //create a book w/o author
         const newBook = await Book.create({ title, transaction: t });
-        throw new Error("Error out");
         await newBook.setAuthor(foundAuthor, { transaction: t });
 
         //query again
         const newBookWithAuthor = await Book.findOne({
           where: { id: newBook.id },
-          include: [Author]
+          include: [Author],
+          transaction: t
         });
         res.status(201).json(newBookWithAuthor);
       } catch (err) {
         res.status(400).json({
-          err: `Author with name = [${req.body.author}] doesn\'t exist.`
+          err: `An unexpected error has occurred ${req.message}`
         });
       }
-
-      // author refer to the model Author
-      // const book = await Book.create(
-      //   { title, Author: { name: name } },
-      //   { include: [Author] }
-      // );
-      res.status(201).json(book);
     });
   });
 
